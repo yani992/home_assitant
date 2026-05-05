@@ -117,7 +117,6 @@ condition:
 
 action:
   - choose:
-
       # Reset cover to 0% if not closed and reset not done yet
       - conditions:
           - condition: template
@@ -130,7 +129,6 @@ action:
               entity_id: "{{ cover_entity }}"
             data:
               position: 0
-
           - service: input_boolean.turn_on
             target:
               entity_id: "{{ reset_done_helper }}"
@@ -152,13 +150,10 @@ action:
                 ] | min }}
 
   # Reset the daily flag at midnight
-  - choose:
-      - conditions:
-          - condition: time
-            at: "04:00:00"
-        sequence:
-          - service: input_boolean.turn_off
-            target:
-              entity_id: "{{ reset_done_helper }}"
+  - condition: time
+    at: "04:00:00"
+  - service: input_boolean.turn_off
+    target:
+      entity_id: "{{ reset_done_helper }}"
 
 mode: single
