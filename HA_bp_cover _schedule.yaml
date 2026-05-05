@@ -1,6 +1,7 @@
 blueprint:
-  name: Gradual Cover Open (Full Control)
-  description: Step-based cover opening with weekdays, holiday mode, and daily reset
+  name: Gradual Cover Open with Weekdays, Holiday Mode, and Reset
+  description: >
+    Opens a cover in steps every configurable interval, only on selected weekdays, skipping when holiday mode is active, and resets cover to 0% once per day if needed.
   domain: automation
 
   input:
@@ -12,6 +13,7 @@ blueprint:
 
     step:
       name: Step size (%)
+      description: How much to open the cover each interval
       default: 20
       selector:
         number:
@@ -21,6 +23,7 @@ blueprint:
 
     interval_minutes:
       name: Interval (minutes)
+      description: How often to open the cover by a step
       default: 5
       selector:
         number:
@@ -43,6 +46,7 @@ blueprint:
 
     weekdays:
       name: Weekdays
+      description: Days on which the automation should run
       default: [mon, tue, wed, thu, fri]
       selector:
         select:
@@ -58,6 +62,7 @@ blueprint:
 
     holiday_mode:
       name: Holiday mode helper
+      description: If ON, automation will not run
       default: []
       selector:
         entity:
@@ -65,87 +70,95 @@ blueprint:
 
     reset_done_helper:
       name: Reset-done helper
-      description: Input boolean used to ensure reset only happens once per day
+      description: Input boolean used to ensure daily reset happens only once
       selector:
         entity:
           domain: input_boolean
 
 trigger:
+  # Trigger every minute
   - platform: time_pattern
-    minutes: "/{{ interval_minutes }}"
-
-  # Reset helper at midnight
-  - platform: time
-    at: "00:00:00"
+    minutes: "*"
 
 variables:
   cover_entity: !input cover_entity
   step: !input step
+  interval_minutes: !input interval_minutes
   target_position: !input target_position
-  selected_days: !input weekdays
+  start_time: !input start_time
+  weekdays: !input weekdays
   holiday_mode_entity: !input holiday_mode
-  reset_done: !input reset_done_helper
+  reset_done_helper: !input reset_done_helper
+
+condition:
+  # Interval check
+  - condition: template
+    value_template: >
+      {% set interval = interval_minutes | int %}
+      {% if interval <= 0 %}
+        false
+      {% else %}
+        now().minute % interval == 0
+      {% endif %}
+
+  # After chosen start time
+  - condition: time
+    after: "{{ start_time }}"
+
+  # Only on selected weekdays
+  - condition: template
+    value_template: >
+      {{ now().strftime('%a') | lower in weekdays }}
+
+  # Holiday mode OFF (if provided)
+  - condition: template
+    value_template: >
+      {{ holiday_mode_entity == [] or is_state(holiday_mode_entity, 'off') }}
 
 action:
   - choose:
 
-      # 🌙 Midnight: reset the helper
+      # Reset cover to 0% if not closed and reset not done yet
       - conditions:
-          - condition: trigger
-            id: "0"
+          - condition: template
+            value_template: >
+              {{ is_state(reset_done_helper, 'off') and
+                 (state_attr(cover_entity, 'current_position') | int(0)) > 0 }}
+        sequence:
+          - service: cover.set_cover_position
+            target:
+              entity_id: "{{ cover_entity }}"
+            data:
+              position: 0
+
+          - service: input_boolean.turn_on
+            target:
+              entity_id: "{{ reset_done_helper }}"
+
+      # Open cover step if below target
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ (state_attr(cover_entity, 'current_position') | int(0)) < target_position }}
+        sequence:
+          - service: cover.set_cover_position
+            target:
+              entity_id: "{{ cover_entity }}"
+            data:
+              position: >
+                {{ [
+                  (state_attr(cover_entity, 'current_position') | int(0)) + step,
+                  target_position
+                ] | min }}
+
+  # Reset the daily flag at midnight
+  - choose:
+      - conditions:
+          - condition: time
+            at: "04:00:00"
         sequence:
           - service: input_boolean.turn_off
             target:
-              entity_id: !input reset_done_helper
-
-      # 🌅 Normal operation
-      - conditions:
-          - condition: time
-            after: !input start_time
-
-          - condition: template
-            value_template: >
-              {{ now().strftime('%a') | lower in selected_days }}
-
-          - condition: template
-            value_template: >
-              {{ holiday_mode_entity == [] or is_state(holiday_mode_entity, 'off') }}
-
-        sequence:
-
-          - choose:
-
-              # 🔄 First: reset to 0 if needed (once per day)
-              - conditions:
-                  - condition: template
-                    value_template: >
-                      {{ is_state(reset_done, 'off') and
-                         (state_attr(cover_entity, 'current_position') | int(0)) > 0 }}
-                sequence:
-                  - service: cover.set_cover_position
-                    target:
-                      entity_id: !input cover_entity
-                    data:
-                      position: 0
-
-                  - service: input_boolean.turn_on
-                    target:
-                      entity_id: !input reset_done_helper
-
-              # ⬆️ Then: normal step-up
-              - conditions:
-                  - condition: template
-                    value_template: >
-                      {{ (state_attr(cover_entity, 'current_position') | int(0)) < target_position }}
-                sequence:
-                  - service: cover.set_cover_position
-                    target:
-                      entity_id: !input cover_entity
-                    data:
-                      position: >
-                        {{ [
-                          (state_attr(cover_entity, 'current_position') | int(0)) + step,
-                          target_position
-                        ] | min }}
+              entity_id: "{{ reset_done_helper }}"
 
 mode: single
