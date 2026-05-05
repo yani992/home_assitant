@@ -1,0 +1,151 @@
+blueprint:
+  name: Gradual Cover Open (Full Control)
+  description: Step-based cover opening with weekdays, holiday mode, and daily reset
+  domain: automation
+
+  input:
+    cover_entity:
+      name: Cover
+      selector:
+        entity:
+          domain: cover
+
+    step:
+      name: Step size (%)
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    interval_minutes:
+      name: Interval (minutes)
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+
+    target_position:
+      name: Target position (%)
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    start_time:
+      name: Earliest start time
+      selector:
+        time: {}
+
+    weekdays:
+      name: Weekdays
+      default: [mon, tue, wed, thu, fri]
+      selector:
+        select:
+          multiple: true
+          options:
+            - {label: Monday, value: mon}
+            - {label: Tuesday, value: tue}
+            - {label: Wednesday, value: wed}
+            - {label: Thursday, value: thu}
+            - {label: Friday, value: fri}
+            - {label: Saturday, value: sat}
+            - {label: Sunday, value: sun}
+
+    holiday_mode:
+      name: Holiday mode helper
+      default: []
+      selector:
+        entity:
+          domain: input_boolean
+
+    reset_done_helper:
+      name: Reset-done helper
+      description: Input boolean used to ensure reset only happens once per day
+      selector:
+        entity:
+          domain: input_boolean
+
+trigger:
+  - platform: time_pattern
+    minutes: "/{{ interval_minutes }}"
+
+  # Reset helper at midnight
+  - platform: time
+    at: "00:00:00"
+
+variables:
+  cover_entity: !input cover_entity
+  step: !input step
+  target_position: !input target_position
+  selected_days: !input weekdays
+  holiday_mode_entity: !input holiday_mode
+  reset_done: !input reset_done_helper
+
+action:
+  - choose:
+
+      # 🌙 Midnight: reset the helper
+      - conditions:
+          - condition: trigger
+            id: "0"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input reset_done_helper
+
+      # 🌅 Normal operation
+      - conditions:
+          - condition: time
+            after: !input start_time
+
+          - condition: template
+            value_template: >
+              {{ now().strftime('%a') | lower in selected_days }}
+
+          - condition: template
+            value_template: >
+              {{ holiday_mode_entity == [] or is_state(holiday_mode_entity, 'off') }}
+
+        sequence:
+
+          - choose:
+
+              # 🔄 First: reset to 0 if needed (once per day)
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {{ is_state(reset_done, 'off') and
+                         (state_attr(cover_entity, 'current_position') | int(0)) > 0 }}
+                sequence:
+                  - service: cover.set_cover_position
+                    target:
+                      entity_id: !input cover_entity
+                    data:
+                      position: 0
+
+                  - service: input_boolean.turn_on
+                    target:
+                      entity_id: !input reset_done_helper
+
+              # ⬆️ Then: normal step-up
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {{ (state_attr(cover_entity, 'current_position') | int(0)) < target_position }}
+                sequence:
+                  - service: cover.set_cover_position
+                    target:
+                      entity_id: !input cover_entity
+                    data:
+                      position: >
+                        {{ [
+                          (state_attr(cover_entity, 'current_position') | int(0)) + step,
+                          target_position
+                        ] | min }}
+
+mode: single
