@@ -1,7 +1,7 @@
 blueprint:
-  name: Gradual Cover Open with Weekdays, Holiday Mode, and Reset
+  name: Gradual Cover Open
   description: >
-    Opens a cover in steps every configurable interval, only on selected weekdays, skipping when holiday mode is active, and resets cover to 0% once per day if needed.
+    Opens a cover in steps every configurable interval, only on selected weekdays, skipping when holiday mode is active.
   domain: automation
 
   input:
@@ -68,13 +68,6 @@ blueprint:
         entity:
           domain: input_boolean
 
-    reset_done_helper:
-      name: Reset-done helper
-      description: Input boolean used to ensure daily reset happens only once
-      selector:
-        entity:
-          domain: input_boolean
-
 trigger:
   # Trigger every minute
   - platform: time_pattern
@@ -88,7 +81,6 @@ variables:
   start_time: !input start_time
   weekdays: !input weekdays
   holiday_mode_entity: !input holiday_mode
-  reset_done_helper: !input reset_done_helper
 
 condition:
   # Interval check
@@ -117,22 +109,6 @@ condition:
 
 action:
   - choose:
-      # Reset cover to 0% if not closed and reset not done yet
-      - conditions:
-          - condition: template
-            value_template: >
-              {{ is_state(reset_done_helper, 'off') and
-                 (state_attr(cover_entity, 'current_position') | int(0)) > 0 }}
-        sequence:
-          - service: cover.set_cover_position
-            target:
-              entity_id: "{{ cover_entity }}"
-            data:
-              position: 0
-          - service: input_boolean.turn_on
-            target:
-              entity_id: "{{ reset_done_helper }}"
-
       # Open cover step if below target
       - conditions:
           - condition: template
@@ -148,12 +124,5 @@ action:
                   (state_attr(cover_entity, 'current_position') | int(0)) + step,
                   target_position
                 ] | min }}
-
-  # Reset the daily flag at midnight
-  - condition: time
-    at: "04:00:00"
-  - service: input_boolean.turn_off
-    target:
-      entity_id: "{{ reset_done_helper }}"
 
 mode: single
