@@ -1,0 +1,122 @@
+blueprint:
+  name: Gradual Cover Open
+  description: >
+    Opens a cover in steps every configurable interval, only on selected weekdays, skipping when holiday mode is active.
+  domain: automation
+
+  input:
+    cover_entity:
+      name: Cover
+      selector:
+        entity:
+          domain: cover
+
+    step:
+      name: Step size (%)
+      description: How much to open the cover each interval
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    interval_minutes:
+      name: Interval (minutes)
+      description: How often to open the cover by a step
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+
+    target_position:
+      name: Target position (%)
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    start_time:
+      name: Earliest start time
+      selector:
+        time: {}
+
+    weekdays:
+      name: Weekdays
+      description: Days on which the automation should run
+      default: [mon, tue, wed, thu, fri]
+      selector:
+        select:
+          multiple: true
+          options:
+            - {label: Monday, value: mon}
+            - {label: Tuesday, value: tue}
+            - {label: Wednesday, value: wed}
+            - {label: Thursday, value: thu}
+            - {label: Friday, value: fri}
+            - {label: Saturday, value: sat}
+            - {label: Sunday, value: sun}
+
+    holiday_mode:
+      name: Holiday mode helper
+      description: If ON, automation will not run
+      default: []
+      selector:
+        entity:
+          domain: input_boolean
+
+trigger:
+  - platform: template
+    value_template: >
+      {% set interval = interval_minutes | int %}
+      {% set start = start_time %}
+      {% set now_min = now().hour * 60 + now().minute %}
+      {% set start_min = start.split(':')[0] | int * 60 + start.split(':')[1] | int %}
+      {{ now_min >= start_min and (now_min - start_min) % interval == 0 }}
+
+variables:
+  cover_entity: !input cover_entity
+  step: !input step
+  interval_minutes: !input interval_minutes
+  target_position: !input target_position
+  start_time: !input start_time
+  weekdays: !input weekdays
+  holiday_mode_entity: !input holiday_mode
+
+  # After chosen start time
+  - condition: template
+  value_template: >
+    {{ now().strftime('%H:%M') >= start_time }}
+
+  # Only on selected weekdays
+  - condition: template
+    value_template: >
+      {{ now().strftime('%a') | lower in weekdays }}
+
+  # Holiday mode OFF (if provided)
+  - condition: template
+    value_template: >
+      {{ not holiday_mode_entity or is_state(holiday_mode_entity, 'off') }}
+
+action:
+  - choose:
+      # Open cover step if below target
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ (state_attr(cover_entity, 'current_position') | int(0)) < target_position }}
+        sequence:
+          - service: cover.set_cover_position
+            target:
+              entity_id: "{{ cover_entity }}"
+            data:
+              position: >
+                {{ [
+                  (state_attr(cover_entity, 'current_position') | int(0)) + step,
+                  target_position
+                ] | min }}
+
+mode: single
