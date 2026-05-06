@@ -55,11 +55,12 @@ condition:
 
 variables:
   sensor_entity: !input source_sensor
+  user_helper: !input trend_helper
   helper_entity: >
-    {% if !input trend_helper %}
+    {% if user_helper == "" %}
       input_number.{{ sensor_entity.split('.')[-1] }}_trend
     {% else %}
-      {{ !input trend_helper }}
+      {{ user_helper }}
     {% endif %}
   window_seconds: !input time_window
 
