@@ -1,0 +1,86 @@
+blueprint:
+  name: Generic Sensor Trend to Helper
+  description: >
+    Calculates the trend of any numeric sensor (temperature, humidity, luminosity, etc.)
+    and stores it in a helper (input_number) for use in automations, dashboards, or scripts.
+    The helper name is automatically generated based on the source sensor if not provided.
+  domain: automation
+
+  input:
+    source_sensor:
+      name: Source Sensor
+      description: Sensor to calculate the trend from
+      selector:
+        entity:
+          domain: sensor
+
+    trend_helper:
+      name: Trend Helper (Optional)
+      description: >
+        Input Number helper to store the trend value. If left empty, a name will be auto-generated.
+      default: ""
+      selector:
+        text:
+
+    update_interval:
+      name: Update Interval
+      description: How often the trend is calculated
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 3600
+          unit_of_measurement: seconds
+
+    time_window:
+      name: Time Window
+      description: Time window for derivative calculation (seconds)
+      default: 1800
+      selector:
+        number:
+          min: 10
+          max: 86400
+          unit_of_measurement: seconds
+
+trigger:
+  # Trigger every minute (fixed)
+  - platform: time_pattern
+    minutes: "*"
+
+condition:
+  # Check if this run aligns with the update_interval
+  - condition: template
+    value_template: >
+      {{ (now().timestamp() | int) % update_interval == 0 }}
+
+variables:
+  sensor_entity: !input source_sensor
+  helper_entity: >
+    {% if !input trend_helper %}
+      input_number.{{ sensor_entity.split('.')[-1] }}_trend
+    {% else %}
+      {{ !input trend_helper }}
+    {% endif %}
+  window_seconds: !input time_window
+
+action:
+  - variables:
+      current_value: "{{ states(sensor_entity) | float(0) }}"
+      now_ts: "{{ as_timestamp(now()) }}"
+      last_data: "{{ state_attr(helper_entity, 'last_data') | default([]) }}"
+      updated_data: >
+        {{ (last_data + [{'ts': now_ts, 'value': current_value}])
+           | selectattr('ts', '>=', now_ts - window_seconds)
+           | list }}
+      trend: >
+        {% set oldest = updated_data[0].value if updated_data|length > 0 else 0 %}
+        {% set newest = updated_data[-1].value if updated_data|length > 0 else 0 %}
+        {% set delta = newest - oldest %}
+        {% set dt = updated_data[-1].ts - updated_data[0].ts if updated_data|length > 1 else 1 %}
+        {{ (delta / dt * 3600) | round(2) }}  # Trend per hour
+
+  - service: input_number.set_value
+    target:
+      entity_id: "{{ helper_entity }}"
+    data:
+      value: "{{ trend }}"
