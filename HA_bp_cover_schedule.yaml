@@ -88,8 +88,8 @@ variables:
 
   # After chosen start time
   - condition: template
-  value_template: >
-    {{ now().strftime('%H:%M') >= start_time }}
+    value_template: >
+      {{ now().strftime('%H:%M') >= start_time }}
 
   # Only on selected weekdays
   - condition: template
