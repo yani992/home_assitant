@@ -41,6 +41,7 @@ blueprint:
 
     start_time:
       name: Earliest start time
+      default: "08:00"
       selector:
         time: {}
 
