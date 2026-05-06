@@ -86,6 +86,7 @@ variables:
   weekdays: !input weekdays
   holiday_mode_entity: !input holiday_mode
 
+condition:
   # After chosen start time
   - condition: template
     value_template: >
