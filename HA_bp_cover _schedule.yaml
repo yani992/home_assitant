@@ -69,9 +69,13 @@ blueprint:
           domain: input_boolean
 
 trigger:
-  # Trigger every minute
-  - platform: time_pattern
-    minutes: "*"
+  - platform: template
+    value_template: >
+      {% set interval = interval_minutes | int %}
+      {% set start = start_time %}
+      {% set now_min = now().hour * 60 + now().minute %}
+      {% set start_min = start.split(':')[0] | int * 60 + start.split(':')[1] | int %}
+      {{ now_min >= start_min and (now_min - start_min) % interval == 0 }}
 
 variables:
   cover_entity: !input cover_entity
@@ -81,12 +85,6 @@ variables:
   start_time: !input start_time
   weekdays: !input weekdays
   holiday_mode_entity: !input holiday_mode
-
-condition:
-  # Interval check
-  - condition: template
-    value_template: >
-      {{ now().minute % interval_minutes == 0 }}
 
   # After chosen start time
   - condition: template
