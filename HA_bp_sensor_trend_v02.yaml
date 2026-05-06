@@ -1,0 +1,57 @@
+blueprint:
+  name: Generic Sensor Trend with Auto Name
+  description: >
+    Creates a derivative sensor to calculate the trend of any numeric sensor
+    (temperature, humidity, luminosity, etc.) using the derivative platform.
+    If the trend name is left blank, it will automatically append "_trend" to the source sensor name.
+  domain: sensor
+
+  input:
+    source_sensor:
+      name: Source Sensor
+      description: Sensor to calculate the trend from
+      selector:
+        entity:
+          domain: sensor
+
+    trend_name:
+      name: Trend Sensor Name (Optional)
+      description: Name for the derivative sensor. If left blank, "_trend" is appended to the source sensor name.
+      default: ""
+      selector:
+        text:
+
+    unit_time:
+      name: Unit of Time
+      description: Time unit for the derivative calculation
+      default: "h"
+      selector:
+        select:
+          options:
+            - s
+            - min
+            - h
+
+    time_window:
+      name: Time Window
+      description: Time window for derivative calculation (format HH:MM:SS)
+      default: "00:30:00"
+      selector:
+        text:
+
+variables:
+  source: !input source_sensor
+  trend_name_input: !input trend_name
+  trend_name_final: >
+    {% if trend_name_input == "" %}
+      {{ source.split('.')[-1] }}_trend
+    {% else %}
+      {{ trend_name_input }}
+    {% endif %}
+
+sensor:
+  - platform: derivative
+    source: "{{ source }}"
+    name: "{{ trend_name_final }}"
+    unit_time: !input unit_time
+    time_window: !input time_window
