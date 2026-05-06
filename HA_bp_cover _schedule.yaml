@@ -86,12 +86,7 @@ condition:
   # Interval check
   - condition: template
     value_template: >
-      {% set interval = interval_minutes | int %}
-      {% if interval <= 0 %}
-        false
-      {% else %}
-        now().minute % interval == 0
-      {% endif %}
+      {{ now().minute % interval_minutes == 0 }}
 
   # After chosen start time
   - condition: time
@@ -105,7 +100,7 @@ condition:
   # Holiday mode OFF (if provided)
   - condition: template
     value_template: >
-      {{ holiday_mode_entity == [] or is_state(holiday_mode_entity, 'off') }}
+      {{ not holiday_mode_entity or is_state(holiday_mode_entity, 'off') }}
 
 action:
   - choose:
